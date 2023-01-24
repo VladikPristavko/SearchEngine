@@ -1,0 +1,34 @@
+# example values
+
+indexing-settings:
+  sites:
+    - url: http://cherikov.gov.by
+      name: Чериков
+    - url: http://radiomv.ru
+      name: RadioMV
+    - url: https://www.playback.ru
+      name: PlayBack.Ru
+server:
+  port: 8080
+
+spring:
+  datasource:
+    username: worker
+    password: Qwe1231_
+    url: jdbc:mysql://localhost:3306/search_engine
+      ?useSSL=false
+      &requireSSL=false
+      &createDatabaseIfNotExist=true
+      &allowPublicKeyRetrieval=true
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+parser-config:
+  filterConditions: ['.pdf','.jpg','instagram','#','?','/special/','.xls','.webp','.jpeg','.png','.doc','vk.com']
+  userAgent: 'Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6'
+  referrer: 'http://www.google.com'
