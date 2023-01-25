@@ -8,6 +8,7 @@ import searchengine.model.Site;
 
 public interface PageRepository extends JpaRepository<Page, Integer> {
     void deleteAllBySite(Site site);
+    Page findByPath(String path);
     int countBySite(Site site);
     boolean existsByPath(String path);
     @Modifying

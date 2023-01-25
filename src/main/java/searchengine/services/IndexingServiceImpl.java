@@ -1,14 +1,22 @@
 package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import searchengine.config.IndexerConfiguration;
 import searchengine.config.ParserConfiguration;
 import searchengine.config.SitesList;
+import searchengine.model.Lemma;
+import searchengine.parsers.PageIndexer;
+import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.parsers.SiteParser;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 import searchengine.response.ErrorResult;
@@ -26,7 +34,10 @@ import java.util.concurrent.*;
 public class IndexingServiceImpl implements IndexingService{
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
+    private final LemmaRepository lemmaRepository;
+    private final IndexRepository indexRepository;
     private final ParserConfiguration parserConfiguration;
+    private final IndexerConfiguration indexerConfiguration;
     private final SitesList sites;
     private ExecutorService executorService;
 
@@ -75,7 +86,7 @@ public class IndexingServiceImpl implements IndexingService{
                 site.setStatusTime(LocalDateTime.now());
                 site.setStatus(Status.FAILED);
                 site.setLastError("Индексация остановлена пользователем");
-                siteRepository.save(site);
+                //siteRepository.save(site);
             }
         });
         return OkResult.get();
@@ -84,9 +95,12 @@ public class IndexingServiceImpl implements IndexingService{
     @Override
     @Transactional
     public ResponseEntity<ResponseResult> indexPage(String url) {
+        if (url.equals("")){
+            return ErrorResult.get("Не введен адрес страницы", 400);
+        }
         searchengine.config.Site siteFromConfig = null;
         for (searchengine.config.Site site : sites.getSites()) {
-            if (site.getUrl().equals(url)) {
+            if (url.startsWith(site.getUrl())) {
                 siteFromConfig = site;
                 break;
             }
@@ -98,14 +112,41 @@ public class IndexingServiceImpl implements IndexingService{
         if (executorService != null){
             return ErrorResult.get("Индексация уже запущена, ожидайте завершения", 503);
         }
-        Site site = siteRepository.findByName(siteFromConfig.getName());
-        if (site != null){
-            siteRepository.disableForeignKeys();
-            siteRepository.deleteByName(siteFromConfig.getName());
-            pageRepository.deleteAllBySite(site);
-            siteRepository.ableForeignKeys();
+        int code = 0;
+        String content = "";
+        try {
+            Connection connection = Jsoup.connect(url)
+                    .userAgent(parserConfiguration.getUserAgent())
+                    .referrer(parserConfiguration.getReferrer());
+            url = connection.execute().url().toString();
+            code = connection.execute().statusCode();
+            content = connection.get().toString();
+        } catch (IOException e) {
+            return ErrorResult.get("Страница сайта недоступна", 404);
         }
-        searchengine.config.Site finalSiteFromConfig = siteFromConfig;
+        String path = url.substring(siteFromConfig.getUrl().length());
+        Page page = pageRepository.findByPath(path);
+        Site site = siteRepository.findByName(siteFromConfig.getName());
+        if (page != null){
+            clearIndexAndLemmasByPage(site, page);
+        }
+        page = new Page();
+        page.setSite(site);
+        page.setPath(path);
+        page.setCode(code);
+        page.setContent(content);
+        pageRepository.save(page);
+        PageIndexer pageIndexer = new PageIndexer();
+        if (pageIndexer.getLemmaRepository() == null){
+            try {
+                pageIndexerConfigure(pageIndexer);
+            } catch (IOException e) {
+                return ErrorResult.get("Ошибка инициализации Lucene.Morphology", 503);
+            }
+        }
+        pageIndexer.indexPage(site, page);
+
+      /*  searchengine.config.Site finalSiteFromConfig = siteFromConfig;
         String validUrl;
         try {
             validUrl = urlValidator(siteFromConfig);
@@ -114,8 +155,23 @@ public class IndexingServiceImpl implements IndexingService{
         }
         executorService = Executors.newCachedThreadPool();
         executorService.execute(() -> parseSite(finalSiteFromConfig.getName(), validUrl));
-        executorService.execute(this::updateIndexingTime);
+        executorService.execute(this::updateIndexingTime);*/
         return OkResult.get();
+    }
+    private void clearIndexAndLemmasByPage(Site site, Page page){
+        siteRepository.disableForeignKeys();
+        indexRepository.findAllByPage(page).forEach(item -> {
+            String lemmaName = item.getLemma().getLemma();
+            Lemma lemma = lemmaRepository.findByLemmaAndSite(lemmaName, site);
+            if (lemma.getFrequency() == 1) {
+                lemmaRepository.delete(lemma);
+            } else {
+                lemma.setFrequency(lemma.getFrequency() - 1);
+            }
+        });
+        indexRepository.deleteAllByPage(page);
+        pageRepository.delete(page);
+        siteRepository.ableForeignKeys();
     }
     private void updateIndexingTime(){
         boolean isInterrupted = false;
@@ -142,9 +198,6 @@ public class IndexingServiceImpl implements IndexingService{
         }
     }
     private void parseSite(String name, String url){
-        if (url.equals("")){
-            return;
-        }
         Site site = new Site();
         site.setStatusTime(LocalDateTime.now());
         site.setName(name);
@@ -167,16 +220,28 @@ public class IndexingServiceImpl implements IndexingService{
     private void siteParserConfigure(SiteParser siteParser){
         siteParser.setPageRepository(pageRepository);
         siteParser.setSiteRepository(siteRepository);
-        siteParser.setConditions(parserConfiguration.getFilterConditions());
+        siteParser.setConditions(parserConfiguration.getFilterConditionsParser());
         siteParser.setUserAgent(parserConfiguration.getUserAgent());
         siteParser.setReferrer(parserConfiguration.getReferrer());
+    }
+
+    private void pageIndexerConfigure(PageIndexer pageIndexer) throws IOException {
+        pageIndexer.setLemmaRepository(lemmaRepository);
+        pageIndexer.setIndexRepository(indexRepository);
+        pageIndexer.setUserFilterConditions(indexerConfiguration.getFilterConditionsIndexer());
+        pageIndexer.setServicePartFilter(indexerConfiguration.getServicePartFilter());
+        pageIndexer.setMorphology(new RussianLuceneMorphology());
     }
     private void clearAllTables() {
         siteRepository.disableForeignKeys();
         siteRepository.deleteAllInBatch();
         pageRepository.deleteAllInBatch();
+        lemmaRepository.deleteAllInBatch();
+        indexRepository.deleteAllInBatch();
         siteRepository.restartAutoIncrement();
         pageRepository.restartAutoIncrement();
+        lemmaRepository.restartAutoIncrement();
+        indexRepository.restartAutoIncrement();
         siteRepository.ableForeignKeys();
     }
     private String urlValidator(searchengine.config.Site siteFromConfig) throws IOException {

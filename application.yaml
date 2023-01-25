@@ -29,6 +29,10 @@ spring:
     show-sql: true
 
 parser-config:
-  filterConditions: ['.pdf','.jpg','instagram','#','?','/special/','.xls','.webp','.jpeg','.png','.doc','vk.com']
+  filterConditionsParser: ['.pdf','.jpg','instagram','#','?','/special/','.xls','.webp','.jpeg','.png','.doc','vk.com']
   userAgent: 'Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6'
   referrer: 'http://www.google.com'
+
+indexer-config:
+  filterConditionsIndexer: []
+  servicePartFilter: 'olnp' #o - междометие, l - предлог, n - союз, p - частица

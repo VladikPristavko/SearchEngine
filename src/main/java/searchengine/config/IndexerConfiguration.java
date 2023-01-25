@@ -6,12 +6,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-@Setter
-@Getter
 @Component
-@ConfigurationProperties(prefix = "parser-config")
-public class ParserConfiguration {
-    private List<String> filterConditionsParser;
-    private String userAgent;
-    private String referrer;
+@Getter
+@Setter
+@ConfigurationProperties(prefix = "indexer-config")
+public class IndexerConfiguration {
+    private List<String> filterConditionsIndexer;
+    private String servicePartFilter;
 }

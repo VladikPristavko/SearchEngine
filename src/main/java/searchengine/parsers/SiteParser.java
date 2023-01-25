@@ -3,6 +3,7 @@ package searchengine.parsers;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.springframework.stereotype.Component;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.ForkJoinTask;
 import java.util.stream.Collectors;
+
 public class SiteParser extends RecursiveAction {
     private static PageRepository pageRepository;
     private static SiteRepository siteRepository;
